@@ -162,7 +162,7 @@ async def forward_channel_messages(client, message: Message):
 
 
 # General Forwarding for All Chats
-@app.on_message(filters.chat_type.groups | filters.chat_type.channels | filters.private)
+@app.on_message(filters.group | filters.channel | filters.private)
 async def forward_general_messages(client, message: Message):
     if message.text or message.caption or message.photo or message.video or message.audio or message.document:
         targets = load_targets()
