@@ -133,7 +133,11 @@ async def get_channel_ids(client, message: Message):
         ids = message.text.strip().split()
 
         if len(ids) < 2:
-            await message.reply("\u2699\ufe0f Please send: `source_id target_id [filters]`")
+            await message.reply("⚙️ Please send in this format:\n`source_id target_id [filters]`\nExample: `-1001234567890 -1009876543210 photo video`")
+            return
+
+        if not ids[0].startswith('-100') or not ids[1].startswith('-100'):
+            await message.reply("⚠️ Please send valid Telegram channel IDs starting with `-100`.")
             return
 
         source_channel = int(ids[0])
@@ -146,12 +150,12 @@ async def get_channel_ids(client, message: Message):
         user_channels[user_id]["channels"].append({"source": source_channel, "target": target_channel, "filters": filters_selected})
         user_channels[user_id]["active"] = True
 
-        await message.reply(f"\u2705 Channel pair saved!\nSource: `{source_channel}`\nTarget: `{target_channel}`\nFilters: {', '.join(filters_selected) if filters_selected else 'All'}")
+        await message.reply(f"✅ Channel pair saved!\nSource: `{source_channel}`\nTarget: `{target_channel}`\nFilters: {', '.join(filters_selected) if filters_selected else 'All'}")
         await app.send_message(ADMIN_CHAT_ID, f"User {user_id} started forwarding from {source_channel} to {target_channel} with filters {filters_selected}.")
 
     except Exception as e:
         logger.error(f"Error while saving target channel: {e}")
-        await message.reply("\u274C Error while processing your input.")
+        await message.reply("❌ Error while processing your input. Please make sure your message format is correct.")
 
 
 @app.on_message(filters.channel)
