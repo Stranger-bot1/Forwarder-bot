@@ -4,6 +4,8 @@ import logging
 import os
 import re
 import json
+from threading import Thread
+from flask import Flask
 from pyrogram import Client, filters
 from pyrogram.types import Message
 
@@ -26,6 +28,19 @@ user_channels = {}
 # Initialize Bot
 app = Client("file_storing_gpt_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
+# KeepAlive server
+server = Flask('')
+
+@server.route('/')
+def home():
+    return "Bot is Alive"
+
+def run():
+    server.run(host='0.0.0.0', port=8080)
+
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
 
 def load_targets():
     try:
@@ -34,11 +49,9 @@ def load_targets():
     except:
         return []
 
-
 def save_targets(targets):
     with open(TARGETS_FILE, "w") as f:
         json.dump(targets, f)
-
 
 def clean_text(text):
     if not text:
@@ -46,12 +59,11 @@ def clean_text(text):
     cleaned_text = re.sub(r'@\w+', '', text)
     return cleaned_text.strip()
 
-
 # General Commands
 @app.on_message(filters.private & filters.command("start"))
 async def start_command(client, message: Message):
     await message.reply(
-        "\U0001F44B Welcome to the Combined Forwarder Bot!\n\n"
+        "👋 Welcome to the Combined Forwarder Bot!\n\n"
         "Commands:\n"
         "/add_target <chat_id>\n"
         "/remove_target <chat_id>\n"
@@ -61,17 +73,15 @@ async def start_command(client, message: Message):
         "Send /stop to pause your forwarding."
     )
 
-
 @app.on_message(filters.private & filters.command("stop"))
 async def stop_command(client, message: Message):
     user_id = message.from_user.id
     if user_id in user_channels:
         user_channels[user_id]["active"] = False
-        await message.reply("\U0001F6D8 Forwarding stopped for you.")
+        await message.reply("🛑 Forwarding stopped for you.")
         await app.send_message(ADMIN_CHAT_ID, f"User {user_id} stopped forwarding.")
     else:
-        await message.reply("\u26A0\uFE0F No active forwarding found.")
-
+        await message.reply("⚠️ No active forwarding found.")
 
 @app.on_message(filters.private & filters.command("add_target"))
 async def add_target(client, message: Message):
@@ -81,12 +91,11 @@ async def add_target(client, message: Message):
         if chat_id not in targets:
             targets.append(chat_id)
             save_targets(targets)
-            await message.reply(f"\u2705 Target {chat_id} added!")
+            await message.reply(f"✅ Target {chat_id} added!")
         else:
-            await message.reply("\u26A0\uFE0F Already added.")
+            await message.reply("⚠️ Already added.")
     except:
-        await message.reply("\u274C Provide a valid chat_id.\nExample: /add_target -1001234567890")
-
+        await message.reply("❌ Provide a valid chat_id.\nExample: /add_target -1001234567890")
 
 @app.on_message(filters.private & filters.command("remove_target"))
 async def remove_target(client, message: Message):
@@ -96,21 +105,19 @@ async def remove_target(client, message: Message):
         if chat_id in targets:
             targets.remove(chat_id)
             save_targets(targets)
-            await message.reply(f"\u2705 Target {chat_id} removed!")
+            await message.reply(f"✅ Target {chat_id} removed!")
         else:
-            await message.reply("\u26A0\uFE0F Target not found.")
+            await message.reply("⚠️ Target not found.")
     except:
-        await message.reply("\u274C Provide a valid chat_id.\nExample: /remove_target -1001234567890")
-
+        await message.reply("❌ Provide a valid chat_id.\nExample: /remove_target -1001234567890")
 
 @app.on_message(filters.private & filters.command("list_targets"))
 async def list_targets(client, message: Message):
     targets = load_targets()
     if targets:
-        await message.reply("\ud83d\udccd Targets:\n" + "\n".join([str(t) for t in targets]))
+        await message.reply("📍 Targets:\n" + "\n".join([str(t) for t in targets]))
     else:
-        await message.reply("\u2139\ufe0f No targets yet.")
-
+        await message.reply("ℹ️ No targets yet.")
 
 # User channel linking
 @app.on_message(filters.private & filters.text & ~filters.command(["start", "stop", "add_target", "remove_target", "list_targets"]))
@@ -120,7 +127,7 @@ async def get_channel_ids(client, message: Message):
         ids = message.text.strip().split()
 
         if len(ids) != 2:
-            await message.reply("\u2699\ufe0f Please send exactly two channel IDs separated by space: `source_id target_id`")
+            await message.reply("⚙️ Please send exactly two channel IDs separated by space: `source_id target_id`")
             return
 
         source_channel = int(ids[0])
@@ -132,13 +139,12 @@ async def get_channel_ids(client, message: Message):
         user_channels[user_id]["channels"].append({"source": source_channel, "target": target_channel})
         user_channels[user_id]["active"] = True
 
-        await message.reply(f"\u2705 Channel pair saved!\nSource: `{source_channel}`\nTarget: `{target_channel}`")
+        await message.reply(f"✅ Channel pair saved!\nSource: `{source_channel}`\nTarget: `{target_channel}`")
         await app.send_message(ADMIN_CHAT_ID, f"User {user_id} started forwarding from {source_channel} to {target_channel}.")
 
     except Exception as e:
         logger.error(f"Error while saving target channel: {e}")
-        await message.reply("\u274C Error while processing your input.")
-
+        await message.reply("❌ Error while processing your input.")
 
 # Auto forwarding from channels (user-specific)
 @app.on_message(filters.channel)
@@ -151,15 +157,14 @@ async def forward_channel_messages(client, message: Message):
                         await asyncio.sleep(2)
                         await message.copy(chat_id=channel_pair["target"])
 
-                        log_msg = f"\u2705 Forwarded message ID {message.id} from {channel_pair['source']} to {channel_pair['target']} (User {user_id})"
+                        log_msg = f"✅ Forwarded message ID {message.id} from {channel_pair['source']} to {channel_pair['target']} (User {user_id})"
                         logger.info(log_msg)
                         await app.send_message(ADMIN_CHAT_ID, log_msg)
 
                     except Exception as e:
-                        error_msg = f"\u274C Error forwarding message ID {message.id}: {e}"
+                        error_msg = f"❌ Error forwarding message ID {message.id}: {e}"
                         logger.error(error_msg)
                         await app.send_message(ADMIN_CHAT_ID, error_msg)
-
 
 # General Forwarding for All Chats
 @app.on_message(filters.group | filters.channel | filters.private)
@@ -209,7 +214,7 @@ async def forward_general_messages(client, message: Message):
         except Exception as e:
             logger.error(f"Error forwarding: {e}")
 
-
 if __name__ == "__main__":
-    logger.info("\ud83e\udd16 Combined Forwarder Bot is running...")
+    keep_alive()
+    logger.info("🤖 Combined Forwarder Bot is running...")
     app.run()
