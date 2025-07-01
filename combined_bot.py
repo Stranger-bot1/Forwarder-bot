@@ -1,267 +1,216 @@
-# telegram_forwarder_bot.py
-import asyncio
-import logging
-import os
-import re
-import json
 from pyrogram import Client, filters
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from config import API_ID, API_HASH, BOT_TOKEN, ADMIN_CHAT_ID
+import json
+import os
 from flask import Flask
-from threading import Thread
+import threading
 
-# Logging setup
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+app_web = Flask('')
 
-# Bot credentials (provided)
-API_ID = 24344133
-API_HASH = "edbe7000baef13fa5a6c45c8edc4be66"
-BOT_TOKEN = "7790100613:AAFrRb6Amtpu5XAos0iuqb85Y05bEXsu_sg"
-ADMIN_CHAT_ID = 123456789  # Replace with your Telegram User ID
+bot = Client("auto_forwarder_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# Storage files
-TARGETS_FILE = "targets.json"
+if not os.path.exists("targets.json"):
+    with open("targets.json", "w") as f:
+        json.dump({"sources": [], "targets": [], "filters": {
+            "text": True, "photo": True, "video": True, "document": True}}, f)
 
-# In-memory storage for user-specific forwarding
-user_channels = {}
+def load_data():
+    with open("targets.json", "r") as f:
+        return json.load(f)
 
-# Initialize Bot
-app = Client("file_storing_gpt_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+def save_data(data):
+    with open("targets.json", "w") as f:
+        json.dump(data, f, indent=4)
 
-# KeepAlive Setup (for Render & UptimeRobot)
-flask_app = Flask('')
-
-@flask_app.route('/')
-def home():
-    return "🤖 Bot is Alive!"
-
-def run():
-    flask_app.run(host='0.0.0.0', port=8080)
-
-def keep_alive():
-    t = Thread(target=run)
-    t.start()
-
-
-def load_targets():
-    try:
-        with open(TARGETS_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return []
-
-
-def save_targets(targets):
-    with open(TARGETS_FILE, "w") as f:
-        json.dump(targets, f)
-
-
-def clean_text(text):
-    if not text:
-        return ""
-    cleaned_text = re.sub(r'@\w+', '', text)
-    return cleaned_text.strip()
-
-
-# General Commands
-@app.on_message(filters.private & filters.command("start"))
-async def start_command(client, message: Message):
+@bot.on_message(filters.command("start"))
+async def start(client, message):
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Add Target", callback_data="add_target"), InlineKeyboardButton("Remove Target", callback_data="remove_target")],
-        [InlineKeyboardButton("List Targets", callback_data="list_targets")],
+        [InlineKeyboardButton("Manage Sources", callback_data="manage_sources")],
+        [InlineKeyboardButton("Manage Targets", callback_data="manage_targets")],
+        [InlineKeyboardButton("Set Filters", callback_data="set_filters")],
         [InlineKeyboardButton("Help", callback_data="help")]
     ])
-    await message.reply(
-        "👋 **Welcome to File Sender Bot!**\n\n"
-        "Here’s what I can do for you:\n"
-        "✅ Add Global Targets (/add_target <chat_id>)\n"
-        "✅ Remove Targets (/remove_target <chat_id>)\n"
-        "✅ List Targets (/list_targets)\n"
-        "✅ Send me channel IDs like: source_id target_id\n"
-        "✅ Stop forwarding: /stop\n\n"
-        "💡 **Note:** Use only Telegram Channel IDs starting with `-100`.",
-        reply_markup=keyboard
+    await message.reply("👋 Welcome to Auto Forwarder Bot!\n\nManage your forwarding settings below.", reply_markup=keyboard)
+
+# MENU NAVIGATION
+@bot.on_callback_query(filters.regex("back_to_menu"))
+async def back_to_menu(client, callback_query):
+    await start(client, callback_query.message)
+
+# MANAGE SOURCES
+@bot.on_callback_query(filters.regex("manage_sources"))
+async def manage_sources(client, callback_query):
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("➕ Add Source", callback_data="add_source")],
+        [InlineKeyboardButton("📂 View Sources", callback_data="view_sources")],
+        [InlineKeyboardButton("❌ Remove Source", callback_data="remove_source")],
+        [InlineKeyboardButton("🔙 Back", callback_data="back_to_menu")]
+    ])
+    await callback_query.message.edit_text("Manage your Source Channels:", reply_markup=keyboard)
+
+# MANAGE TARGETS
+@bot.on_callback_query(filters.regex("manage_targets"))
+async def manage_targets(client, callback_query):
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("➕ Add Target", callback_data="add_target")],
+        [InlineKeyboardButton("📂 View Targets", callback_data="view_targets")],
+        [InlineKeyboardButton("❌ Remove Target", callback_data="remove_target")],
+        [InlineKeyboardButton("🔙 Back", callback_data="back_to_menu")]
+    ])
+    await callback_query.message.edit_text("Manage your Target Channels:", reply_markup=keyboard)
+
+# ADD SOURCE
+@bot.on_callback_query(filters.regex("add_source"))
+async def add_source(client, callback_query):
+    await callback_query.message.edit_text("Please send the @username or channel ID of the source channel.")
+
+    @bot.on_message(filters.private & filters.text)
+    async def get_source(client, message):
+        data = load_data()
+        source = message.text.strip()
+        if source not in data['sources']:
+            data['sources'].append(source)
+            save_data(data)
+            await message.reply(f"✅ Source channel {source} added successfully.")
+        else:
+            await message.reply("⚠️ This source channel is already added.")
+
+# ADD TARGET
+@bot.on_callback_query(filters.regex("add_target"))
+async def add_target(client, callback_query):
+    await callback_query.message.edit_text("Please send the @username or channel ID of the target channel.")
+
+    @bot.on_message(filters.private & filters.text)
+    async def get_target(client, message):
+        data = load_data()
+        target = message.text.strip()
+        if target not in data['targets']:
+            data['targets'].append(target)
+            save_data(data)
+            await message.reply(f"✅ Target channel {target} added successfully.")
+        else:
+            await message.reply("⚠️ This target channel is already added.")
+
+# VIEW SOURCES
+@bot.on_callback_query(filters.regex("view_sources"))
+async def view_sources(client, callback_query):
+    data = load_data()
+    sources = "\n".join(data['sources']) if data['sources'] else "No source channels added."
+    await callback_query.message.edit_text(f"📂 Source Channels:\n{sources}")
+
+# VIEW TARGETS
+@bot.on_callback_query(filters.regex("view_targets"))
+async def view_targets(client, callback_query):
+    data = load_data()
+    targets = "\n".join(data['targets']) if data['targets'] else "No target channels added."
+    await callback_query.message.edit_text(f"🎯 Target Channels:\n{targets}")
+
+# REMOVE SOURCE
+@bot.on_callback_query(filters.regex("remove_source"))
+async def remove_source(client, callback_query):
+    await callback_query.message.edit_text("Please send the @username or channel ID of the source channel to remove.")
+
+    @bot.on_message(filters.private & filters.text)
+    async def delete_source(client, message):
+        data = load_data()
+        source = message.text.strip()
+        if source in data['sources']:
+            data['sources'].remove(source)
+            save_data(data)
+            await message.reply(f"✅ Source channel {source} removed successfully.")
+        else:
+            await message.reply("⚠️ Source channel not found.")
+
+# REMOVE TARGET
+@bot.on_callback_query(filters.regex("remove_target"))
+async def remove_target(client, callback_query):
+    await callback_query.message.edit_text("Please send the @username or channel ID of the target channel to remove.")
+
+    @bot.on_message(filters.private & filters.text)
+    async def delete_target(client, message):
+        data = load_data()
+        target = message.text.strip()
+        if target in data['targets']:
+            data['targets'].remove(target)
+            save_data(data)
+            await message.reply(f"✅ Target channel {target} removed successfully.")
+        else:
+            await message.reply("⚠️ Target channel not found.")
+
+# SET FILTERS
+@bot.on_callback_query(filters.regex("set_filters"))
+async def set_filters(client, callback_query):
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("📝 Text", callback_data="filter_text"),
+         InlineKeyboardButton("🖼️ Photo", callback_data="filter_photo")],
+        [InlineKeyboardButton("🎥 Video", callback_data="filter_video"),
+         InlineKeyboardButton("📄 Document", callback_data="filter_document")],
+        [InlineKeyboardButton("🔙 Back", callback_data="back_to_menu")]
+    ])
+    await callback_query.message.edit_text("Select message types to forward:", reply_markup=keyboard)
+
+# FILTER TOGGLE
+@bot.on_callback_query(filters.regex("filter_(.*)"))
+async def set_filter(client, callback_query):
+    data = load_data()
+    filter_type = callback_query.data.split("_")[1]
+    current = data.get('filters', {}).get(filter_type, True)
+    data['filters'][filter_type] = not current
+    save_data(data)
+    status = "✅ Enabled" if not current else "❌ Disabled"
+    await callback_query.answer(f"{filter_type.capitalize()} {status}")
+
+# HELP
+@bot.on_callback_query(filters.regex("help"))
+async def help_message(client, callback_query):
+    await callback_query.message.edit_text(
+        "ℹ️ **Bot Instructions:**\n"
+        "- Add source and target channels.\n"
+        "- Set what type of messages you want to forward.\n"
+        "- Make sure the bot is **admin** in both channels.\n"
+        "- Bot will copy messages (without forwarded tag).\n"
+        "- If an error happens, the bot will send you the reason directly.\n"
+        "- Enjoy your automation! 🚀"
     )
 
+# MESSAGE FORWARDING
+@bot.on_message(filters.chat(lambda _, __, message: message.chat.username in load_data()['sources']))
+async def forward_message(client, message):
+    data = load_data()
+    filters_enabled = data.get('filters', {})
+    allowed = False
 
-@app.on_callback_query()
-async def handle_callback(client, callback_query):
-    data = callback_query.data
-    if data == "add_target":
-        await callback_query.message.reply("Use this command to add a target: /add_target -100XXXXXXXXXX")
-    elif data == "remove_target":
-        await callback_query.message.reply("Use this command to remove a target: /remove_target -100XXXXXXXXXX")
-    elif data == "list_targets":
-        await callback_query.message.reply("Use this command to list targets: /list_targets")
-    elif data == "help":
-        await callback_query.message.reply(
-            "🔗 **Help Menu:**\n"
-            "- Add Target: /add_target -100XXXXXXXXXX\n"
-            "- Remove Target: /remove_target -100XXXXXXXXXX\n"
-            "- List Targets: /list_targets\n"
-            "- Stop Forwarding: /stop\n\n"
-            "Send me source and target channel IDs separated by space to start forwarding."
-        )
+    if message.text and filters_enabled.get('text', True):
+        allowed = True
+    if message.photo and filters_enabled.get('photo', True):
+        allowed = True
+    if message.video and filters_enabled.get('video', True):
+        allowed = True
+    if message.document and filters_enabled.get('document', True):
+        allowed = True
 
+    if allowed:
+        for target in data['targets']:
+            try:
+                await message.copy(target)
+            except Exception as e:
+                try:
+                    await client.send_message(ADMIN_CHAT_ID, f"❌ Error forwarding to {target}: {str(e)}")
+                except:
+                    pass
 
-@app.on_message(filters.private & filters.command("stop"))
-async def stop_command(client, message: Message):
-    user_id = message.from_user.id
-    if user_id in user_channels:
-        user_channels[user_id]["active"] = False
-        await message.reply("🚘 Forwarding stopped for you.")
-        await app.send_message(ADMIN_CHAT_ID, f"User {user_id} stopped forwarding.")
-    else:
-        await message.reply("⚠️ You don’t have any active forwarding.")
+# Keep Alive (for UptimeRobot)
+@app_web.route('/')
+def home():
+    return "Bot is Running!"
 
+def run_web():
+    app_web.run(host="0.0.0.0", port=8080)
 
-@app.on_message(filters.private & filters.command("add_target"))
-async def add_target(client, message: Message):
-    targets = load_targets()
-    try:
-        chat_id = int(message.text.split()[1])
-        if str(chat_id).startswith("-100"):
-            if chat_id not in targets:
-                targets.append(chat_id)
-                save_targets(targets)
-                await message.reply(f"✅ Target {chat_id} added successfully!")
-            else:
-                await message.reply("⚠️ This target is already added.")
-        else:
-            await message.reply("⚠️ Please send a valid Telegram channel ID starting with -100.")
-    except:
-        await message.reply("❌ Please send a valid format. Example: /add_target -1001234567890")
+def keep_alive():
+    t = threading.Thread(target=run_web)
+    t.start()
 
-
-@app.on_message(filters.private & filters.command("remove_target"))
-async def remove_target(client, message: Message):
-    targets = load_targets()
-    try:
-        chat_id = int(message.text.split()[1])
-        if chat_id in targets:
-            targets.remove(chat_id)
-            save_targets(targets)
-            await message.reply(f"✅ Target {chat_id} removed successfully!")
-        else:
-            await message.reply("⚠️ This target was not found in your list.")
-    except:
-        await message.reply("❌ Please send a valid format. Example: /remove_target -1001234567890")
-
-
-@app.on_message(filters.private & filters.command("list_targets"))
-async def list_targets(client, message: Message):
-    targets = load_targets()
-    if targets:
-        await message.reply("📍 **Current Targets:**\n" + "\n".join([str(t) for t in targets]))
-    else:
-        await message.reply("ℹ️ No global targets added yet.")
-
-
-# User channel linking with friendly errors
-@app.on_message(filters.private & filters.text & ~filters.command(["start", "stop", "add_target", "remove_target", "list_targets"]))
-async def get_channel_ids(client, message: Message):
-    try:
-        user_id = message.from_user.id
-        ids = message.text.strip().split()
-
-        if len(ids) != 2:
-            await message.reply("⚙️ Please send exactly two **Telegram Channel IDs** separated by space.\nExample: `-1001234567890 -1009876543210`")
-            return
-
-        source_channel = ids[0]
-        target_channel = ids[1]
-
-        if not (source_channel.startswith("-100") and target_channel.startswith("-100")):
-            await message.reply("⚠️ Please send valid Telegram channel IDs starting with `-100`.\nExample: `-1001234567890 -1009876543210`")
-            return
-
-        source_channel = int(source_channel)
-        target_channel = int(target_channel)
-
-        if user_id not in user_channels:
-            user_channels[user_id] = {"channels": [], "active": True}
-
-        user_channels[user_id]["channels"].append({"source": source_channel, "target": target_channel})
-        user_channels[user_id]["active"] = True
-
-        await message.reply(f"✅ Channel pair saved successfully!\n\nSource: `{source_channel}`\nTarget: `{target_channel}`")
-        await app.send_message(ADMIN_CHAT_ID, f"User {user_id} started forwarding from {source_channel} to {target_channel}.")
-
-    except Exception as e:
-        logger.error(f"Error while saving target channel: {e}")
-        await message.reply(f"❌ Error while processing your input. Reason: {e}")
-
-
-@app.on_message(filters.channel)
-async def forward_channel_messages(client, message: Message):
-    for user_id, user_data in user_channels.items():
-        if user_data.get("active"):
-            for channel_pair in user_data.get("channels", []):
-                if message.chat.id == channel_pair["source"]:
-                    try:
-                        await asyncio.sleep(2)
-                        await message.copy(chat_id=channel_pair["target"])
-
-                        log_msg = f"✅ Forwarded message ID {message.id} from {channel_pair['source']} to {channel_pair['target']} (User {user_id})"
-                        logger.info(log_msg)
-                        await app.send_message(ADMIN_CHAT_ID, log_msg)
-
-                    except Exception as e:
-                        error_msg = f"❌ Error forwarding message ID {message.id}: {e}"
-                        logger.error(error_msg)
-                        await app.send_message(ADMIN_CHAT_ID, error_msg)
-                        await app.send_message(user_id, f"❌ Failed to forward your message from {channel_pair['source']} to {channel_pair['target']}. Reason: {e}")
-
-
-@app.on_message(filters.group | filters.channel | filters.private)
-async def forward_general_messages(client, message: Message):
-    if message.text or message.caption or message.photo or message.video or message.audio or message.document:
-        targets = load_targets()
-        if not targets:
-            return
-
-        try:
-            if message.text:
-                cleaned_text = clean_text(message.text)
-                for target in targets:
-                    await app.send_message(chat_id=target, text=cleaned_text)
-
-            elif message.caption:
-                cleaned_caption = clean_text(message.caption)
-                if message.photo:
-                    for target in targets:
-                        await app.send_photo(chat_id=target, photo=message.photo.file_id, caption=cleaned_caption)
-                elif message.video:
-                    for target in targets:
-                        await app.send_video(chat_id=target, video=message.video.file_id, caption=cleaned_caption)
-                elif message.document:
-                    for target in targets:
-                        await app.send_document(chat_id=target, document=message.document.file_id, caption=cleaned_caption)
-                elif message.audio:
-                    for target in targets:
-                        await app.send_audio(chat_id=target, audio=message.audio.file_id, caption=cleaned_caption)
-
-            elif message.photo:
-                for target in targets:
-                    await app.send_photo(chat_id=target, photo=message.photo.file_id)
-
-            elif message.video:
-                for target in targets:
-                    await app.send_video(chat_id=target, video=message.video.file_id)
-
-            elif message.document:
-                for target in targets:
-                    await app.send_document(chat_id=target, document=message.document.file_id)
-
-            elif message.audio:
-                for target in targets:
-                    await app.send_audio(chat_id=target, audio=message.audio.file_id)
-
-        except Exception as e:
-            logger.error(f"Error forwarding: {e}")
-
-
-if __name__ == "__main__":
-    keep_alive()
-    logger.info("🤖 Telegram Forwarder Bot is running...")
-    app.run()
+keep_alive()
+bot.run()
