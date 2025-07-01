@@ -5,7 +5,7 @@ import os
 import re
 import json
 from pyrogram import Client, filters
-from pyrogram.types import Message
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from flask import Flask
 from threading import Thread
 
@@ -66,16 +66,42 @@ def clean_text(text):
 # General Commands
 @app.on_message(filters.private & filters.command("start"))
 async def start_command(client, message: Message):
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("Add Target", callback_data="add_target"), InlineKeyboardButton("Remove Target", callback_data="remove_target")],
+        [InlineKeyboardButton("List Targets", callback_data="list_targets")],
+        [InlineKeyboardButton("Help", callback_data="help")]
+    ])
     await message.reply(
         "👋 **Welcome to File Sender Bot!**\n\n"
         "Here’s what I can do for you:\n"
         "✅ Add Global Targets (/add_target <chat_id>)\n"
         "✅ Remove Targets (/remove_target <chat_id>)\n"
         "✅ List Targets (/list_targets)\n"
-        "✅ You can send me channel IDs in this format: `source_id target_id`\n"
-        "✅ To stop your forwarding: /stop\n\n"
-        "💡 **Note:** Use only Telegram Channel IDs starting with `-100`."
+        "✅ Send me channel IDs like: source_id target_id\n"
+        "✅ Stop forwarding: /stop\n\n"
+        "💡 **Note:** Use only Telegram Channel IDs starting with `-100`.",
+        reply_markup=keyboard
     )
+
+
+@app.on_callback_query()
+async def handle_callback(client, callback_query):
+    data = callback_query.data
+    if data == "add_target":
+        await callback_query.message.reply("Use this command to add a target: /add_target -100XXXXXXXXXX")
+    elif data == "remove_target":
+        await callback_query.message.reply("Use this command to remove a target: /remove_target -100XXXXXXXXXX")
+    elif data == "list_targets":
+        await callback_query.message.reply("Use this command to list targets: /list_targets")
+    elif data == "help":
+        await callback_query.message.reply(
+            "🔗 **Help Menu:**\n"
+            "- Add Target: /add_target -100XXXXXXXXXX\n"
+            "- Remove Target: /remove_target -100XXXXXXXXXX\n"
+            "- List Targets: /list_targets\n"
+            "- Stop Forwarding: /stop\n\n"
+            "Send me source and target channel IDs separated by space to start forwarding."
+        )
 
 
 @app.on_message(filters.private & filters.command("stop"))
@@ -83,7 +109,7 @@ async def stop_command(client, message: Message):
     user_id = message.from_user.id
     if user_id in user_channels:
         user_channels[user_id]["active"] = False
-        await message.reply("🛘 Forwarding stopped for you.")
+        await message.reply("🚘 Forwarding stopped for you.")
         await app.send_message(ADMIN_CHAT_ID, f"User {user_id} stopped forwarding.")
     else:
         await message.reply("⚠️ You don’t have any active forwarding.")
