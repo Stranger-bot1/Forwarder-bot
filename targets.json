@@ -1,1 +1,10 @@
-[]
+{
+    "sources": [],
+    "targets": [],
+    "filters": {
+        "text": true,
+        "photo": true,
+        "video": true,
+        "document": true
+    }
+}
