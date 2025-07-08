@@ -27,7 +27,7 @@ def save_data(data):
 
 @app_web.route('/')
 def home():
-    return "✅ Auto Forwarder Bot is Running. Deploy successful."
+    return "✅ Auto Forwarder Bot is Live."
 
 
 def run_web():
