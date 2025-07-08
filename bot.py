@@ -1,5 +1,5 @@
 from pyrogram import Client, filters
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 from config import API_ID, API_HASH, BOT_TOKEN, ADMIN_CHAT_ID
 import json
 import os
@@ -103,6 +103,40 @@ async def stop_forwarding(client, message):
         await message.reply("⛔ Forwarding stopped.")
     else:
         await message.reply("⚠️ You have no configuration yet.")
+
+
+@bot.on_callback_query()
+async def handle_callbacks(client, callback_query: CallbackQuery):
+    data = load_data()
+    user_id = str(callback_query.from_user.id)
+
+    if callback_query.data.startswith("start_"):
+        if user_id in data:
+            data[user_id]['is_active'] = True
+            save_data(data)
+            await callback_query.answer("✅ Forwarding activated.", show_alert=True)
+        else:
+            await callback_query.answer("⚠️ No setup found.", show_alert=True)
+
+    elif callback_query.data.startswith("stop_"):
+        if user_id in data:
+            data[user_id]['is_active'] = False
+            save_data(data)
+            await callback_query.answer("⏹️ Forwarding deactivated.", show_alert=True)
+        else:
+            await callback_query.answer("⚠️ No setup found.", show_alert=True)
+
+    elif callback_query.data.startswith("sources_"):
+        await callback_query.answer("📂 Source management is under development.", show_alert=True)
+
+    elif callback_query.data.startswith("targets_"):
+        await callback_query.answer("🎯 Target management is under development.", show_alert=True)
+
+    elif callback_query.data.startswith("filters_"):
+        await callback_query.answer("⚙️ Filter management is under development.", show_alert=True)
+
+    elif callback_query.data == "help":
+        await callback_query.answer("ℹ️ Add source/target via commands. Automanage coming soon!", show_alert=True)
 
 
 @bot.on_message(filters.group | filters.channel)
