@@ -1,0 +1,13 @@
+{
+    "5623268527": {
+        "sources": [],
+        "targets": [],
+        "filters": {
+            "text": true,
+            "photo": true,
+            "video": true,
+            "document": true
+        },
+        "is_active": true
+    }
+}

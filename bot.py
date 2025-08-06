@@ -261,9 +261,17 @@ async def forward_message(client, message):
             )
 
             if allowed:
+                # Remove the [FORWARD] tag from the start of the message text if present
+                new_text = message.text
+                if message.text and message.text.startswith('[FORWARD]'):
+                    new_text = message.text[len('[FORWARD]'):].lstrip()
+
                 for target in user_data["targets"]:
                     try:
-                        await message.copy(target)
+                        if message.text:
+                            await client.send_message(target, new_text, reply_markup=message.reply_markup)
+                        else:
+                            await message.copy(target)
                     except Exception as e:
                         try:
                             await client.send_message(int(user_id), f"❌ Error sending to {target}: {e}")
